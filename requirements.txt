@@ -1,0 +1,9 @@
+
+MetaTrader5
+pandas
+numpy
+openai
+fastapi
+uvicorn
+python-dotenv
+websockets
