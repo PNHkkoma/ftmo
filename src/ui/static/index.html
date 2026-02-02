@@ -1,13 +1,16 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FTMO Pro Trader | AI Powered</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <div class="app-container">
         <!-- Sidebar -->
@@ -15,13 +18,17 @@
             <div class="logo">
                 <h2>FTMO<span>PRO</span></h2>
             </div>
-            
+
             <div class="account-panel glass">
-                <div class="metric">
+                <div class="metric"
+                    onmouseenter="showTooltip(event, 'Balance: Tổng số dư tài khoản hiện có (chưa tính lệnh đang chạy)')"
+                    onmouseleave="hideTooltip()">
                     <span>Balance</span>
                     <h3 id="acc-balance">$100,000</h3>
                 </div>
-                <div class="metric">
+                <div class="metric"
+                    onmouseenter="showTooltip(event, 'Equity: Vốn thực (Balance + Lời/Lỗ của lệnh đang treo)')"
+                    onmouseleave="hideTooltip()">
                     <span>Equity</span>
                     <h3 id="acc-equity">$100,000</h3>
                 </div>
@@ -29,13 +36,16 @@
             </div>
 
             <nav>
-                <button class="nav-btn active">Dashboard</button>
-                <button class="nav-btn">Analytics</button>
-                <button class="nav-btn">Settings</button>
+                <button class="nav-btn active" onclick="switchView('dashboard')">Market Overview</button>
+                <button class="nav-btn" onclick="switchView('analytics')">Results (Analytics)</button>
+                <button class="nav-btn" onclick="switchView('settings')">Settings</button>
             </nav>
 
             <div class="add-symbol-box">
-                <input type="text" id="new-symbol-input" placeholder="Add Symbol (e.g. US30)">
+                <div style="position: relative; width: 100%;">
+                    <input type="text" id="new-symbol-input" placeholder="Search (e.g. BTCUSD)" autocomplete="off">
+                    <div id="symbol-dropdown" class="symbol-dropdown hidden"></div>
+                </div>
                 <button id="add-symbol-btn">+</button>
             </div>
         </aside>
@@ -43,65 +53,192 @@
         <!-- Main Content -->
         <main class="main-content">
             <header>
-                <h1>Market Overview <span class="subtitle">AI & Strategy Analysis</span></h1>
-                <div class="clock" id="clock">00:00:00</div>
+                <h1>FTMO Trader <span class="subtitle">AI & Strategy Analysis</span></h1>
+                <div class="clock-container">
+                    <div class="clock-item">
+                        <span>LOCAL:</span> <span id="clock-local">00:00:00</span>
+                    </div>
+                    <div class="clock-item">
+                        <span>BROKER:</span> <span id="clock-broker" class="accent-text">00:00:00</span>
+                    </div>
+                </div>
             </header>
 
-            <!-- Ticker Grid -->
-            <div class="ticker-grid" id="ticker-grid">
-                <!-- Cards injected by JS -->
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="view-section">
+                <!-- Wrapper for Grid & Workspace to switch between -->
+
+                <!-- 1. Grid View (Default) -->
+                <div id="market-grid-container">
+                    <div class="ticker-grid" id="ticker-grid">
+                        <!-- Cards injected by JS -->
+                    </div>
+                </div>
+
+                <!-- 2. Workspace View (Chart + Panel) -->
+                <div id="workspace-container" class="hidden">
+                    <div class="workspace-layout">
+                        <!-- Chart Area -->
+                        <div class="chart-area">
+                            <div class="chart-header">
+                                <button class="back-btn" onclick="closeWorkspace()">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                                    </svg>
+                                    Back to Overview
+                                </button>
+                                <h2 id="chart-symbol-name">SYMBOL</h2>
+                                <div class="tf-selector">
+                                    <button class="tf-btn" onclick="changeTimeframe('M1')">M1</button>
+                                    <button class="tf-btn active" onclick="changeTimeframe('M5')">M5</button>
+                                    <button class="tf-btn" onclick="changeTimeframe('M15')">M15</button>
+                                    <button class="tf-btn" onclick="changeTimeframe('H1')">H1</button>
+                                    <button class="tf-btn" onclick="changeTimeframe('D1')">D1</button>
+                                </div>
+                            </div>
+                            <div id="tv-chart"></div>
+                        </div>
+
+                        <!-- Side Trading Panel -->
+                        <div class="side-panel">
+                            <div class="panel-body">
+                                <div class="ai-section">
+                                    <h4>AI Insight</h4>
+                                    <div id="ai-content" class="ai-content">
+                                        Ready.
+                                    </div>
+                                    <button class="ai-btn" id="analyze-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <path
+                                                d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                        </svg>
+                                        AI Analyze
+                                    </button>
+                                </div>
+
+                                <div class="live-price-box">
+                                    <div class="lp-item"
+                                        onmouseenter="showTooltip(event, 'BID: Giá bạn có thể Bán (Sell) ngay lập tức')"
+                                        onmouseleave="hideTooltip()">
+                                        <span class="lp-label">BID</span>
+                                        <span class="lp-val sell-color" id="lp-bid">0.00</span>
+                                    </div>
+                                    <div class="lp-item"
+                                        onmouseenter="showTooltip(event, 'ASK: Giá bạn có thể Mua (Buy) ngay lập tức')"
+                                        onmouseleave="hideTooltip()">
+                                        <span class="lp-label">ASK</span>
+                                        <span class="lp-val buy-color" id="lp-ask">0.00</span>
+                                    </div>
+                                </div>
+
+                                <div class="order-form">
+                                    <div class="form-row">
+                                        <label>Order Type</label>
+                                        <div class="select-wrapper">
+                                            <select id="order-type">
+                                                <option value="BUY">BUY MARKET</option>
+                                                <option value="SELL">SELL MARKET</option>
+                                                <option value="BUY_LIMIT">BUY LIMIT</option>
+                                                <option value="SELL_LIMIT">SELL LIMIT</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <label class="has-tooltip"
+                                            onmouseenter="showTooltip(event, 'Volume: Khối lượng giao dịch (Lot). 1.0 = 1 Lot tiêu chuẩn')"
+                                            onmouseleave="hideTooltip()">Volume (Lots) ⓘ</label>
+                                        <input type="number" id="order-vol" value="0.01" step="0.01">
+                                    </div>
+                                    <div class="form-row">
+                                        <label>Price</label>
+                                        <input type="number" id="order-price"
+                                            placeholder="Current (Market) or Limit Price">
+                                    </div>
+                                    <div class="form-row double">
+                                        <div>
+                                            <label class="has-tooltip"
+                                                onmouseenter="showTooltip(event, 'SL (Stop Loss): Mức giá cắt lỗ để bảo vệ tài khoản')"
+                                                onmouseleave="hideTooltip()">SL ⓘ</label>
+                                            <input type="number" id="order-sl" placeholder="Stop Loss">
+                                        </div>
+                                        <div>
+                                            <label class="has-tooltip"
+                                                onmouseenter="showTooltip(event, 'TP (Take Profit): Mức giá chốt lời tự động')"
+                                                onmouseleave="hideTooltip()">TP ⓘ</label>
+                                            <input type="number" id="order-tp" placeholder="Take Profit">
+                                        </div>
+                                    </div>
+                                    <button class="trade-btn" id="execute-btn">EXECUTE ORDER</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Trading Panel (Bottom) -->
-            <section class="trading-panel glass hidden" id="trade-panel">
-                <div class="panel-header">
-                    <h3 id="panel-symbol">XAUUSD</h3>
-                    <button class="close-btn" onclick="closeTradePanel()">×</button>
-                </div>
-                <div class="panel-body">
-                    <div class="ai-section">
-                        <h4>AI Insight</h4>
-                        <div id="ai-content" class="ai-content">
-                            Click 'Analyze' to get GPT-4o advice.
+            <!-- Analytics View -->
+            <div id="view-analytics" class="view-section hidden">
+                <div class="analytics-dashboard">
+                    <div class="stats-cards">
+                        <div class="stat-card"
+                            onmouseenter="showTooltip(event, 'PnL (Profit & Loss): Tổng lời/lỗ thực tế đã chốt')"
+                            onmouseleave="hideTooltip()">
+                            <span>Total PnL</span>
+                            <h3 id="stat-pnl" class="success-text">$0.00</h3>
                         </div>
-                        <button class="ai-btn" id="analyze-btn">✨ AI Analyze</button>
+                        <div class="stat-card"
+                            onmouseenter="showTooltip(event, 'Win Rate: Tỷ lệ lệnh thắng / Tổng số lệnh')"
+                            onmouseleave="hideTooltip()">
+                            <span>Win Rate</span>
+                            <h3 id="stat-winrate">0%</h3>
+                        </div>
+                        <div class="stat-card">
+                            <span>Total Trades</span>
+                            <h3 id="stat-count">0</h3>
+                        </div>
                     </div>
-                    
-                    <div class="order-form">
-                        <div class="form-row">
-                            <label>Type</label>
-                            <select id="order-type">
-                                <option value="BUY">BUY MARKET</option>
-                                <option value="SELL">SELL MARKET</option>
-                                <option value="BUY_LIMIT">BUY LIMIT</option>
-                                <option value="SELL_LIMIT">SELL LIMIT</option>
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label>Volume</label>
-                            <input type="number" id="order-vol" value="0.01" step="0.01">
-                        </div>
-                        <div class="form-row">
-                            <label>Price</label>
-                            <input type="number" id="order-price" placeholder="Current or Custom">
-                        </div>
-                        <div class="form-row double">
-                            <div>
-                                <label>SL</label>
-                                <input type="number" id="order-sl" placeholder="Stop Loss">
-                            </div>
-                            <div>
-                                <label>TP</label>
-                                <input type="number" id="order-tp" placeholder="Take Profit">
-                            </div>
-                        </div>
-                        <button class="trade-btn" id="execute-btn">EXECUTE ORDER</button>
+
+                    <div class="chart-container-analytics">
+                        <canvas id="pnlChart"></canvas>
+                    </div>
+
+                    <div class="history-table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Vol</th>
+                                    <th onmouseenter="showTooltip(event, 'Profit: Lợi nhuận của từng lệnh')"
+                                        onmouseleave="hideTooltip()">Profit ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-rows">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </section>
+            </div>
+
+            <!-- Settings View (Placeholder) -->
+            <div id="view-settings" class="view-section hidden">
+                <div class="placeholder-box">
+                    <h2>Settings</h2>
+                    <p>Coming soon: Custom timeframe and strategy params.</p>
+                </div>
+            </div>
+
         </main>
     </div>
 
+    <!-- Tooltip Element -->
+    <div id="tooltip" class="tooltip hidden"></div>
+
     <script src="app.js"></script>
 </body>
+
 </html>

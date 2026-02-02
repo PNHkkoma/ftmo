@@ -29,6 +29,15 @@ class MT5Connector:
         if not self.connect(): return None
         return mt5.account_info()
 
+    def get_server_time(self):
+        if not self.connect(): return datetime.now()
+        # mt5 doesn't have a direct "get_server_time" that returns a localized object easily without tick
+        # But we can get the last tick time of a major pair
+        tick = mt5.symbol_info_tick("EURUSD")
+        if tick:
+            return datetime.fromtimestamp(tick.time)
+        return datetime.now()
+
     def get_rates(self, symbol, timeframe=mt5.TIMEFRAME_M5, n=100):
         if not self.connect(): return None
         
@@ -59,31 +68,81 @@ class MT5Connector:
     def place_order(self, symbol, order_type, volume, price, sl, tp, comment="FTMO_AI_Bot"):
         if not self.connect(): return None
         
+        # 1. Normalize Price/SL/TP to tick size
+        info = mt5.symbol_info(symbol)
+        if not info:
+            return {"status": "error", "message": "Symbol not found"}
+        
+        point = info.point
+        digits = info.digits
+        
+        price = float(price)
+        sl = float(sl)
+        tp = float(tp)
+        
+        # Rounding strictly to digits
+        price = round(price, digits)
+        if sl > 0: sl = round(sl, digits)
+        if tp > 0: tp = round(tp, digits)
+
+        # Determine correct filling mode
+        filling_type = mt5.ORDER_FILLING_IOC
+        
+        # Pending orders generally use RETURN (GTC)
+        if order_type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_BUY_STOP, mt5.ORDER_TYPE_SELL_STOP]:
+            filling_type = mt5.ORDER_FILLING_RETURN
+            action_type = mt5.TRADE_ACTION_PENDING
+        else:
+            action_type = mt5.TRADE_ACTION_DEAL
+
         request = {
-            "action": mt5.TRADE_ACTION_DEAL if order_type in [mt5.ORDER_TYPE_BUY, mt5.ORDER_TYPE_SELL] else mt5.TRADE_ACTION_PENDING,
+            "action": action_type,
             "symbol": symbol,
             "volume": float(volume),
             "type": order_type,
-            "price": float(price),
-            "sl": float(sl),
-            "tp": float(tp),
+            "price": price,
+            "sl": sl,
+            "tp": tp,
             "deviation": 20,
             "magic": 123456,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": filling_type,
         }
-        
-        # Adjust for pending orders
-        if order_type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_BUY_STOP, mt5.ORDER_TYPE_SELL_STOP]:
-             request["action"] = mt5.TRADE_ACTION_PENDING
 
         result = mt5.order_send(request)
+        
+        # Fallback for Market Orders if IOC fails
+        if result.retcode == 10030 and action_type == mt5.TRADE_ACTION_DEAL:
+            request["type_filling"] = mt5.ORDER_FILLING_RETURN
+            result = mt5.order_send(request)
+
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"Order failed: {result.retcode} - {result.comment}")
-            return {"status": "error", "message": result.comment}
+            msg = result.comment
+            if result.retcode == 10027:
+                msg = "AutoTrading bị tắt trên MT5. Vui lòng bật nút 'Algo Trading' trên phần mềm MetaTrader 5."
+            return {"status": "error", "message": msg}
         
         logger.info(f"Order placed: {result}")
         return {"status": "success", "ticket": result.order}
+
+    def get_deals_history(self, from_date, to_date):
+        if not self.connect(): return []
+        deals = mt5.history_deals_get(from_date, to_date)
+        if deals is None:
+            return []
+        
+        data = []
+        for d in deals:
+            data.append({
+                "ticket": d.ticket,
+                "symbol": d.symbol,
+                "type": d.type, 
+                "volume": d.volume,
+                "profit": d.profit,
+                "time": d.time
+            })
+        return data
 
 mt5_connector = MT5Connector()
