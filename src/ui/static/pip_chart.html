@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chart Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e27;
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+        }
+
+        .pip-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+        }
+
+        .pip-header {
+            background: rgba(20, 25, 45, 0.95);
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .pip-title {
+            color: #00d4ff;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .pip-price {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pip-price.up {
+            color: #00ff88;
+        }
+
+        .pip-price.down {
+            color: #ff4757;
+        }
+
+        .pip-chart {
+            flex: 1;
+            position: relative;
+            padding: 10px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .pip-footer {
+            background: rgba(20, 25, 45, 0.95);
+            padding: 6px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #888;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .pip-stats {
+            display: flex;
+            gap: 15px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 9px;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00d4ff;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="pip-container">
+        <div class="pip-header">
+            <div class="pip-title">
+                <span class="status-dot"></span>
+                <span id="symbol-name">XAUUSD</span>
+            </div>
+            <div class="pip-price" id="current-price">--</div>
+        </div>
+
+        <div class="pip-chart">
+            <canvas id="chart"></canvas>
+            <div class="loading" id="loading">Connecting...</div>
+        </div>
+
+        <div class="pip-footer">
+            <div class="pip-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Bid</span>
+                    <span class="stat-value" id="bid-price">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Ask</span>
+                    <span class="stat-value" id="ask-price">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Spread</span>
+                    <span class="stat-value" id="spread">--</span>
+                </div>
+            </div>
+            <div id="last-update">--</div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const symbol = urlParams.get('symbol') || 'XAUUSD';
+        const timeframe = urlParams.get('timeframe') || 'M5';
+
+        document.getElementById('symbol-name').textContent = symbol;
+
+        let chart = null;
+        let ws = null;
+        let lastPrice = null;
+
+        // Initialize chart
+        const ctx = document.getElementById('chart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Price',
+                    data: [],
+                    borderColor: '#00d4ff',
+                    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        position: 'right',
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        },
+                        ticks: {
+                            color: '#666',
+                            font: { size: 10 }
+                        }
+                    }
+                },
+                animation: {
+                    duration: 300
+                }
+            }
+        });
+
+        // Connect WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket('ws://127.0.0.1:8000/ws');
+
+            ws.onopen = () => {
+                document.getElementById('loading').style.display = 'none';
+                console.log('PiP WebSocket connected');
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+
+                if (msg.type === 'MARKET_DATA' && msg.data[symbol]) {
+                    updateChart(msg.data[symbol]);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('PiP WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 2000);
+            };
+        }
+
+        function updateChart(data) {
+            const price = data.close;
+            const bid = data.bid;
+            const ask = data.ask;
+
+            // Update price display
+            const priceEl = document.getElementById('current-price');
+            priceEl.textContent = price.toFixed(2);
+
+            if (lastPrice !== null) {
+                priceEl.className = 'pip-price ' + (price > lastPrice ? 'up' : 'down');
+            }
+            lastPrice = price;
+
+            // Update footer stats
+            document.getElementById('bid-price').textContent = bid.toFixed(2);
+            document.getElementById('ask-price').textContent = ask.toFixed(2);
+            document.getElementById('spread').textContent = ((ask - bid) * 100).toFixed(1);
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+            // Update chart
+            const now = new Date().toLocaleTimeString();
+            chart.data.labels.push(now);
+            chart.data.datasets[0].data.push(price);
+
+            // Keep last 50 points
+            if (chart.data.labels.length > 50) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+
+            chart.update('none');
+        }
+
+        // Load initial data
+        fetch(`http://127.0.0.1:8000/api/chart_data?symbol=${symbol}&timeframe=${timeframe}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.length > 0) {
+                    const last20 = data.slice(-20);
+                    chart.data.labels = last20.map((_, i) => i);
+                    chart.data.datasets[0].data = last20.map(d => d.close);
+                    chart.update();
+                }
+            });
+
+        connectWebSocket();
+    </script>
+</body>
+
+</html>

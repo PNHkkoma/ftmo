@@ -37,6 +37,7 @@
 
             <nav>
                 <button class="nav-btn active" onclick="switchView('dashboard')">Market Overview</button>
+                <button class="nav-btn" onclick="switchView('positions')">Open Positions</button>
                 <button class="nav-btn" onclick="switchView('analytics')">Results (Analytics)</button>
                 <button class="nav-btn" onclick="switchView('settings')">Settings</button>
             </nav>
@@ -95,6 +96,14 @@
                                     <button class="tf-btn" onclick="changeTimeframe('M15')">M15</button>
                                     <button class="tf-btn" onclick="changeTimeframe('H1')">H1</button>
                                     <button class="tf-btn" onclick="changeTimeframe('D1')">D1</button>
+                                    <button class="pip-btn" onclick="openPiP()" title="Open Picture-in-Picture">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" />
+                                            <rect x="13" y="11" width="7" height="6" rx="1" />
+                                        </svg>
+                                        PiP
+                                    </button>
                                 </div>
                             </div>
                             <div id="tv-chart"></div>
@@ -178,6 +187,56 @@
                 </div>
             </div>
 
+            <!-- Positions View -->
+            <div id="view-positions" class="view-section hidden">
+                <div class="analytics-dashboard">
+                    <h3>Active Orders & Positions</h3>
+                    <div class="history-table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Ticket</th>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Vol</th>
+                                    <th>Price</th>
+                                    <th>SL</th>
+                                    <th>TP</th>
+                                    <th>Profit</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="position-rows">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                        <div id="pos-debug"
+                            style="color: #666; font-size: 0.8em; padding: 10px; font-family: monospace;"></div>
+                    </div>
+
+                    <h3 style="margin-top: 30px;">Order History (Log)</h3>
+                    <div class="history-table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Ticket</th>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Vol</th>
+                                    <th>Price</th>
+                                    <th>State</th>
+                                    <th>Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="order-history-rows">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- Analytics View -->
             <div id="view-analytics" class="view-section hidden">
                 <div class="analytics-dashboard">
@@ -235,10 +294,31 @@
         </main>
     </div>
 
+
+    <!-- Modal for Edit -->
+    <div id="modify-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Modify Position</h3>
+            <input type="hidden" id="mod-ticket">
+            <div class="form-row">
+                <label>Stop Loss (SL)</label>
+                <input type="number" id="mod-sl" step="0.01">
+            </div>
+            <div class="form-row">
+                <label>Take Profit (TP)</label>
+                <input type="number" id="mod-tp" step="0.01">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" onclick="submitModify()">Update</button>
+                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Tooltip Element -->
     <div id="tooltip" class="tooltip hidden"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
 </body>
 
 </html>

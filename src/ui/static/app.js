@@ -30,6 +30,8 @@ function initWebSocket() {
             updateUI();
         } else if (msg.type === "STATUS") {
             updateStatusUI(msg.data);
+        } else if (msg.type === "POSITIONS") {
+            updatePositionsUI(msg.data);
         }
     };
 
@@ -70,6 +72,7 @@ function updateUI() {
 // --- Navigation ---
 function switchView(viewName) {
     if (viewName === 'analytics') loadAnalytics();
+    if (viewName === 'positions') loadPositions();
 
     // Default hiding
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
@@ -179,8 +182,9 @@ function closeWorkspace() {
     selectedSymbol = null;
     document.getElementById('workspace-container').classList.add('hidden');
     document.getElementById('market-grid-container').classList.remove('hidden');
-    renderGrid(); // Force re-render immediately
+    renderGrid();
     if (chartDataInterval) clearInterval(chartDataInterval);
+    // Optional: cleanup chart to save memory if needed, but keeping it alive for quick re-open
 }
 
 // --- Grid Renderer ---
@@ -207,7 +211,24 @@ function renderGrid() {
         card.innerHTML = `
             <div class="card-header">
                 <span class="symbol-name">${symbol}</span>
-                <span class="bias-tag bias-${data.bias}" onmouseenter="showTooltip(event, 'Bias: Xu hướng (EMA Trend)')" onmouseleave="hideTooltip()">${data.bias}</span>
+                <div style="display:flex; gap:6px; align-items:center;">
+                     <button class="action-btn" onclick="openSinglePiP(event, '${symbol}')" title="Chart PiP">
+                        <!-- Chart Icon -->
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                             <line x1="8" y1="12" x2="16" y2="12" />
+                             <polyline points="8 16 12 12 16 16" />
+                        </svg>
+                     </button>
+                     <button class="action-btn" onclick="openInfoPiP(event, '${symbol}')" title="Info Card PiP">
+                        <!-- Card Icon -->
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                             <rect x="2" y="5" width="20" height="14" rx="2" />
+                             <line x1="2" y1="10" x2="22" y2="10" />
+                        </svg>
+                     </button>
+                    <span class="bias-tag bias-${data.bias}" onmouseenter="showTooltip(event, 'Bias: Xu hướng (EMA Trend)')" onmouseleave="hideTooltip()">${data.bias}</span>
+                </div>
             </div>
             <div class="price-display">${data.close.toFixed(2)}</div>
             <div class="indicators">
@@ -216,6 +237,20 @@ function renderGrid() {
             </div>
         `;
     });
+}
+
+function openSinglePiP(e, symbol) {
+    if (e) e.stopPropagation();
+    const pipUrl = `pip_chart.html?symbol=${symbol}&timeframe=M5`;
+    const win = window.open(pipUrl, `ChartPiP_${symbol}`, 'width=450,height=300,resizable=yes,scrollbars=no,status=no,toolbar=no');
+    if (win) win.focus();
+}
+
+function openInfoPiP(e, symbol) {
+    if (e) e.stopPropagation();
+    const pipUrl = `pip_info.html?symbol=${symbol}`;
+    const win = window.open(pipUrl, `InfoPiP_${symbol}`, 'width=260,height=160,resizable=yes,scrollbars=no,status=no,toolbar=no');
+    if (win) win.focus();
 }
 
 // --- Analytics ---
@@ -271,6 +306,143 @@ async function loadAnalytics() {
         });
 
     } catch (e) { console.error(e); }
+}
+
+// --- Positions Logic ---
+let currentPositions = [];
+
+async function loadPositions() {
+    try {
+        const res = await fetch(`${API_BASE}/positions`);
+        const data = await res.json();
+        updatePositionsUI(data);
+
+        // Load order history
+        const resH = await fetch(`${API_BASE}/orders/history?days=30`);
+        const dataH = await resH.json();
+        updateOrdersHistoryUI(dataH);
+
+    } catch (e) {
+        console.error("Error loading positions:", e);
+    }
+}
+
+function updatePositionsUI(data) {
+    currentPositions = data;
+    // Only render if view is active to save DOM ops
+    if (document.getElementById('view-positions').classList.contains('hidden')) return;
+
+    const tbody = document.getElementById('position-rows');
+    tbody.innerHTML = '';
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#666">No open positions. (Check History below)</td></tr>';
+    }
+
+    data.forEach(p => {
+        const tr = document.createElement('tr');
+        // Determine Type Color/Badge
+        const isPending = p.status === 'PENDING';
+        const typeColor = isPending ? 'var(--text-muted)' : (p.type.includes('BUY') ? 'var(--success)' : 'var(--danger)');
+        const profitClass = p.profit >= 0 ? 'success-text' : 'danger-text';
+        const displayProfit = isPending ? '-' : p.profit.toFixed(2);
+
+        tr.innerHTML = `
+            <td>${p.ticket}</td>
+            <td>${p.symbol}</td>
+            <td style="color:${typeColor}">${p.type} <span style="font-size:0.7em; opacity:0.7">${isPending ? '(PENDING)' : ''}</span></td>
+            <td>${p.volume}</td>
+            <td>${p.price_open}</td>
+            <td>${p.sl}</td>
+            <td>${p.tp}</td>
+            <td class="${profitClass}">${displayProfit}</td>
+            <td>
+                <button class="action-btn edit-pos" onclick="openModifyModal(${p.ticket}, ${p.sl}, ${p.tp}, '${p.status}')" title="Edit SL/TP">✏️</button>
+                <button class="action-btn close-pos" onclick="closePosition(${p.ticket})" title="${isPending ? 'Cancel Order' : 'Close Position'}">✖</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function updateOrdersHistoryUI(data) {
+    const tbody = document.getElementById('order-history-rows');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666">No recent order history (24h)</td></tr>';
+        return;
+    }
+
+    data.forEach(o => {
+        const tr = document.createElement('tr');
+        let stateColor = '#fff';
+        if (o.state === 'FILLED') stateColor = 'var(--success)';
+        else if (o.state === 'CANCELED' || o.state === 'REJECTED') stateColor = 'var(--danger)';
+        else if (o.state === 'PLACED') stateColor = 'var(--accent)';
+
+        tr.innerHTML = `
+            <td>${new Date(o.time * 1000).toLocaleString()}</td>
+            <td>${o.ticket}</td>
+            <td>${o.symbol}</td>
+            <td>${o.type}</td>
+            <td>${o.volume}</td>
+            <td>${o.price}</td>
+            <td style="color:${stateColor}">${o.state}</td>
+            <td style="font-size:0.8em; color:#888">${o.comment}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+
+async function closePosition(ticket) {
+    if (!confirm("Close position #" + ticket + "?")) return;
+    try {
+        const res = await fetch(`${API_BASE}/positions/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket: ticket })
+        });
+        const json = await res.json();
+        if (json.status === 'success') {
+            // UI update will happen via WebSocket
+        } else {
+            alert("Failed:" + json.message || json.detail);
+        }
+    } catch (e) { alert("Error"); }
+}
+
+// --- Modal Logic ---
+function openModifyModal(ticket, sl, tp) {
+    document.getElementById('mod-ticket').value = ticket;
+    document.getElementById('mod-sl').value = sl;
+    document.getElementById('mod-tp').value = tp;
+    document.getElementById('modify-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('modify-modal').classList.add('hidden');
+}
+
+async function submitModify() {
+    const ticket = parseInt(document.getElementById('mod-ticket').value);
+    const sl = parseFloat(document.getElementById('mod-sl').value) || 0;
+    const tp = parseFloat(document.getElementById('mod-tp').value) || 0;
+
+    try {
+        const res = await fetch(`${API_BASE}/positions/modify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket, sl, tp })
+        });
+        const json = await res.json();
+        if (json.status === 'success') {
+            closeModal();
+        } else {
+            alert("Failed: " + json.message || json.detail);
+        }
+    } catch (e) { alert("Error"); }
 }
 
 // --- Trade & AI ---
@@ -361,6 +533,27 @@ async function addSymbol(sym) {
     searchInput.value = sym; searchDropdown.classList.add('hidden');
     await fetch(`${API_BASE}/symbols?symbol=${sym}`, { method: 'POST' });
 }
+
+// --- Picture-in-Picture ---
+window.openPiP = () => {
+    if (!selectedSymbol) {
+        alert('Please select a symbol first');
+        return;
+    }
+
+    const pipUrl = `pip_chart.html?symbol=${selectedSymbol}&timeframe=${activeTimeframe}`;
+    const pipWindow = window.open(
+        pipUrl,
+        'ChartPiP',
+        'width=400,height=300,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no'
+    );
+
+    if (pipWindow) {
+        pipWindow.focus();
+    } else {
+        alert('Please allow pop-ups for this site to use Picture-in-Picture mode');
+    }
+};
 
 // --- Utils ---
 const tooltip = document.getElementById('tooltip');

@@ -15,6 +15,7 @@ from ..config import DEFAULT_SYMBOLS, TIMEFRAME, ACCOUNT_SIZE, MAX_TOTAL_LOSS, S
 from ..core.mt5_interface import mt5_connector
 from ..core.strategy import calculate_indicators, analyze_market_structure
 from ..core.ai_adviser import AIAdviser
+from .models import TradeRequest
 
 app = FastAPI(title="FTMO Pro Trader")
 
@@ -39,14 +40,17 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        # Convert to JSON string once to save serialization overhead
-        # Handle numpy types if any before broadcast, but strategy returns float/std types usually
-        # But verify serialization safety
-        to_send = json.dumps(message, default=str)
+        try:
+            to_send = json.dumps(message, default=str)
+        except Exception as e:
+            print(f"JSON Dump Error: {e} - Msg: {message}")
+            return
+            
         for connection in self.active_connections:
             try:
                 await connection.send_text(to_send)
-            except:
+            except Exception as e:
+                # print(f"WS Send Error: {e}") 
                 pass
 
 manager = ConnectionManager()
@@ -57,13 +61,7 @@ active_symbols = DEFAULT_SYMBOLS.copy()
 ai_agent = AIAdviser()
 all_mt5_symbols = [] 
 
-class TradeRequest(BaseModel):
-    symbol: str
-    action: str 
-    volume: float
-    price: float = 0.0
-    sl: float = 0.0
-    tp: float = 0.0
+
 
 ORDER_TYPE_MAP = {
     "BUY": mt5.ORDER_TYPE_BUY,
@@ -133,6 +131,11 @@ async def data_loop():
             # Broadcast Server Time
             server_time = mt5_connector.get_server_time()
             account = mt5_connector.get_account_info()
+            # Broadcast Positions (Fetch fresh every 0.5s is fine for local)
+            positions = mt5_connector.get_positions()
+            if positions is not None:
+                await manager.broadcast({"type": "POSITIONS", "data": positions})
+
             status_update = {
                 "type": "STATUS",
                 "data": {
@@ -247,6 +250,52 @@ def add_symbol(symbol: str):
     if symbol not in active_symbols:
         active_symbols.append(symbol)
     return {"status": "added", "symbol": symbol}
+
+from .models import TradeRequest, PositionModifyRequest, PositionCloseRequest
+
+@app.get("/api/positions")
+def get_positions():
+    return mt5_connector.get_positions()
+
+@app.post("/api/positions/close")
+def close_position(req: PositionCloseRequest):
+    res = mt5_connector.close_position(req.ticket)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+@app.post("/api/positions/modify")
+def modify_position(req: PositionModifyRequest):
+    res = mt5_connector.modify_position(req.ticket, req.sl, req.tp)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+@app.get("/api/orders/history")
+def get_orders_history(days: int = 30):
+    from datetime import datetime, timedelta
+    start = datetime.now() - timedelta(days=days)
+    return mt5_connector.get_history_orders(from_date=start)
+
+@app.get("/api/debug_mt5")
+def debug_mt5():
+    import MetaTrader5 as mt5
+    connected = mt5_connector.connect()
+    term_info = mt5.terminal_info()
+    account_info = mt5.account_info()
+    
+    # Check RAW
+    raw_pos = mt5.positions_get()
+    raw_orders = mt5.orders_get()
+    
+    return {
+        "connected": connected,
+        "terminal": term_info._asdict() if term_info else None,
+        "account": account_info._asdict() if account_info else None,
+        "raw_positions_count": len(raw_pos) if raw_pos else 0,
+        "raw_orders_count": len(raw_orders) if raw_orders else 0,
+        "last_error": mt5.last_error()
+    }
 
 import os
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "static")

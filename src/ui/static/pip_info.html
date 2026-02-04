@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #18181b;
+            /* Card Core Color */
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100vh;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .symbol {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .bias-tag {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #333;
+            color: #888;
+        }
+
+        .bias-BULLISH {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .bias-BEARISH {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .bias-RANGE {
+            background: rgba(161, 161, 170, 0.2);
+            color: #a1a1aa;
+        }
+
+        .price {
+            font-size: 42px;
+            font-weight: 700;
+            margin: 4px 0 12px 0;
+            font-variant-numeric: tabular-nums;
+            color: #fff;
+            /* Always white */
+        }
+
+        /* Removed up/down colors */
+
+        .indicators {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: #a1a1aa;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 12px;
+        }
+
+        .indicator-label {
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading" class="loading">Connecting...</div>
+    <div id="content" style="display:none; width: 100%;">
+        <div class="header">
+            <div class="symbol" id="symbol">--</div>
+            <div class="bias-tag" id="bias">--</div>
+        </div>
+        <div class="price" id="price">--</div>
+        <div class="indicators">
+            <div><span class="indicator-label">RSI:</span><span id="rsi">--</span></div>
+            <div><span class="indicator-label">ATR:</span><span id="atr">--</span></div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const symbol = urlParams.get('symbol') || 'XAUUSD';
+
+        document.getElementById('symbol').textContent = symbol;
+
+        let ws = new WebSocket('ws://127.0.0.1:8000/ws');
+        let lastPrice = 0;
+
+        ws.onopen = () => {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'MARKET_DATA' && msg.data[symbol]) {
+                updateData(msg.data[symbol]);
+            }
+        };
+
+        function updateData(data) {
+            // Bias
+            const biasEl = document.getElementById('bias');
+            biasEl.textContent = data.bias;
+            biasEl.className = `bias-tag bias-${data.bias}`;
+
+            // Price
+            const priceEl = document.getElementById('price');
+            priceEl.textContent = data.close.toFixed(2);
+            // Always keep white, removed up/down logic
+
+            // Indicators
+            document.getElementById('rsi').textContent = data.rsi ? data.rsi.toFixed(1) : '-';
+            document.getElementById('atr').textContent = data.atr ? data.atr.toFixed(2) : '-';
+        }
+    </script>
+</body>
+
+</html>

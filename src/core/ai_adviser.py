@@ -24,22 +24,57 @@ class AIAdviser:
              return self.cache.get(symbol, {"advice": "WAIT", "reason": "Cooldown"})
 
         prompt = f"""
-        Analyze this setup for FTMO 100k Challenge (Risk optimized).
-        Symbol: {symbol}
-        Price: {market_data['close']:.2f}
-        Bias: {market_data['bias']}
-        EMA20: {market_data['ema20']:.2f}
-        EMA50: {market_data['ema50']:.2f}
-        RSI: {market_data['rsi']:.1f}
-        ATR: {market_data['atr']:.4f}
+        You are a senior proprietary trading advisor specialized in FTMO challenges.
+        Your primary goal is CAPITAL PRESERVATION and RULE COMPLIANCE, not frequent trading.
 
-        Provide a JSON response with:
-        - "action": "BUY", "SELL", or "WAIT"
-        - "confidence": "HIGH", "MID", "LOW"
-        - "entry": suggested entry price (or null)
-        - "sl": suggested stop loss
-        - "tp": suggested take profit
-        - "reason": short explanation (max 10 words)
+        Account context:
+        - FTMO Challenge
+        - Account size: 100,000 USD
+        - Strict daily and max drawdown rules
+        - Prefer WAIT over low-quality trades
+
+        Market snapshot:
+        Symbol: {symbol}
+        Current price: {market_data['close']:.2f}
+
+        Technical context (lower timeframe):
+        - Bias: {market_data['bias']}
+        - EMA20: {market_data['ema20']:.2f}
+        - EMA50: {market_data['ema50']:.2f}
+        - RSI: {market_data['rsi']:.1f}
+        - ATR: {market_data['atr']:.4f}
+
+        Market regime analysis:
+        - Identify if market is: TRENDING, PULLBACK, RANGE, or HIGH VOLATILITY
+        - Assess whether recent move suggests:
+        * healthy pullback
+        * potential reversal
+        * or dead-cat bounce after liquidation
+
+        Risk & psychology filters:
+        - Avoid trades after strong impulsive moves
+        - Avoid counter-trend trades without confirmation
+        - Avoid tight stop loss in high ATR conditions
+        - Prefer confirmation over prediction
+
+        Decision rules:
+        - If conditions are unclear or risky, choose WAIT
+        - BUY or SELL only if risk-to-reward is clearly favorable (>= 1:2)
+        - Suggested SL must respect current volatility (ATR-based)
+
+        Respond ONLY in valid JSON with:
+        {
+        "action": "BUY" | "SELL" | "WAIT",
+        "confidence": "HIGH" | "MID" | "LOW",
+        "market_phase": "TREND" | "PULLBACK" | "RANGE" | "VOLATILE",
+        "entry": number or null,
+        "sl": number or null,
+        "tp": number or null,
+        "risk_note": "max 8 words",
+        "reason": "max 12 words"
+        }
+
+        Be conservative. FTMO survival > profit.
         """
 
         try:
