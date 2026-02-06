@@ -482,23 +482,69 @@ document.getElementById('analyze-btn').addEventListener('click', async () => {
     if (!selectedSymbol) return;
     const btn = document.getElementById('analyze-btn');
     const content = document.getElementById('ai-content');
-    btn.disabled = true; content.innerText = "Analyzing...";
+    btn.disabled = true; content.innerHTML = "<span class='loader'></span> Analyzing...";
 
     try {
         const res = await fetch(`${API_BASE}/analyze/${selectedSymbol}`, { method: 'POST' });
         const result = await res.json();
+        console.log("AI Result:", result);
 
-        if (result.advice === "WAIT" || result.advice === "ERROR") {
-            content.innerText = `Advisor: ${result.reason}`;
-        } else {
-            content.innerHTML = `<span style="color:var(--primary)">${result.action} (${result.confidence})</span><br>Entry: ${result.entry || 'Market'} | SL: ${result.sl} | TP: ${result.tp}<br><span style="font-size:0.8em; color:#ccc">${result.reason}</span>`;
-            if (result.confidence !== 'LOW') {
-                if (['BUY', 'SELL'].includes(result.action)) document.getElementById('order-type').value = result.action;
-                if (result.sl) document.getElementById('order-sl').value = result.sl;
-                if (result.tp) document.getElementById('order-tp').value = result.tp;
+        // Handle ERROR or WAIT strictly
+        if (result.action === "WAIT" || result.advice === "WAIT" || result.advice === "ERROR") {
+            let reasonHtml = `<div style="text-align:left; font-size: 0.9em;">`;
+
+            // Reasons List
+            if (result.wait_reasons && Array.isArray(result.wait_reasons)) {
+                reasonHtml += `<strong style="color:var(--text-muted)">WAIT REASONS:</strong><ul style="margin:4px 0 8px 16px; color:#fbbf24">`;
+                result.wait_reasons.forEach(r => reasonHtml += `<li>${r}</li>`);
+                reasonHtml += `</ul>`;
+            } else if (result.reason) {
+                reasonHtml += `<div style="color:#fbbf24">Reason: ${result.reason}</div>`;
             }
+
+            // Rationale
+            if (result.professional_rationale) {
+                reasonHtml += `<div style="margin-top:4px; font-style:italic; color:#9ca3af">"${result.professional_rationale}"</div>`;
+            }
+
+            reasonHtml += `</div>`;
+            content.innerHTML = `<span style="font-size:1.1em; font-weight:bold; color:var(--text-muted)">STANDBY (WAIT)</span>${reasonHtml}`;
+
+        } else {
+            // BUY / SELL
+            const riskInfo = result.risk_calc ? `<br><span style="font-size:0.8em; color:#EAB308">${result.risk_calc}</span>` : '';
+            const rationale = result.professional_rationale ? `<div style="font-size:0.8em; color:#ddd; margin-top:5px; font-style:italic">"${result.professional_rationale}"</div>` : '';
+
+            content.innerHTML = `
+                <div style="text-align:left">
+                    <span style="font-size:1.2em; font-weight:bold; color:var(--primary)">${result.action}</span> 
+                    <span style="font-size:0.8em; background:#333; padding:2px 6px; border-radius:4px">${result.setup_quality || 'A'} Quality</span>
+                    <div style="margin: 5px 0;">
+                        Entry: <span style="color:white">${result.entry || 'Market'}</span> | 
+                        SL: <span style="color:#ef4444">${result.sl}</span> | 
+                        TP: <span style="color:#10b981">${result.tp}</span>
+                    </div>
+                    ${rationale}
+                    ${riskInfo}
+                </div>`;
+
+            // Auto-fill Form
+            let uiAction = result.action.toUpperCase(); // Ensure upper
+            if (uiAction.includes('BUY')) uiAction = 'BUY';
+            if (uiAction.includes('SELL')) uiAction = 'SELL';
+
+            const typeSelect = document.getElementById('order-type');
+            if (typeSelect) typeSelect.value = uiAction;
+
+            if (result.suggested_volume) document.getElementById('order-vol').value = result.suggested_volume;
+            if (result.entry) document.getElementById('order-price').value = result.entry;
+            if (result.sl) document.getElementById('order-sl').value = result.sl;
+            if (result.tp) document.getElementById('order-tp').value = result.tp;
         }
-    } catch (e) { content.innerText = "Error contacting AI."; }
+    } catch (e) {
+        console.error(e);
+        content.innerText = "Error contacting AI Adviser.";
+    }
     btn.disabled = false;
 });
 

@@ -11,6 +11,6 @@ if __name__ == "__main__":
     print("👉 Open http://127.0.0.1:8000 in your browser")
     
     try:
-        uvicorn.run("src.api.server:app", host="127.0.0.1", port=8000, reload=True)
+        uvicorn.run("src.api.server:app", host="127.0.0.1", port=8000, reload=True, access_log=False)
     except KeyboardInterrupt:
         print("Shutting down...")

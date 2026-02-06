@@ -20,72 +20,106 @@ class AIAdviser:
 
         # Cooldown check (avoid spamming AI for same symbol in short time)
         now = time.time()
-        if symbol in self.last_call_time and (now - self.last_call_time[symbol] < 120):
+        if symbol in self.last_call_time and (now - self.last_call_time[symbol] < 20):
              return self.cache.get(symbol, {"advice": "WAIT", "reason": "Cooldown"})
+        # print(market_data)
+        # --- Context Extraction ---
+        current_session = market_data.get('session', 'Unknown')
+        dxy_bias = market_data.get('dxy_bias', 'Neutral')
+        liquidity_state = market_data.get('liquidity_state', 'Unknown')
+        fvg_state = market_data.get('fvg_state', 'Unknown')
+        
+        market_data.setdefault('htf_bias', 'Neutral')
+        market_data.setdefault('ltf_bias', market_data.get('bias', 'Neutral'))
+        market_data.setdefault('atr_status', 'Normal')
 
         prompt = f"""
-        You are a senior proprietary trading advisor specialized in FTMO challenges.
-        Your primary goal is CAPITAL PRESERVATION and RULE COMPLIANCE, not frequent trading.
+        You are a Senior Institutional Quant Trader & FTMO Risk Manager.
+        Your sole mandate is to PASS the FTMO 100K Challenge through capital preservation,
+        strict rule compliance, and high-quality institutional setups.
 
-        Account context:
-        - FTMO Challenge
-        - Account size: 100,000 USD
-        - Strict daily and max drawdown rules
-        - Prefer WAIT over low-quality trades
+        Core principle:
+        Survival > Profit.
+        WAIT is preferable to low-quality trades, but VALID B-setups are allowed when risk is controlled.
 
-        Market snapshot:
-        Symbol: {symbol}
-        Current price: {market_data['close']:.2f}
+        ACCOUNT CONTEXT:
+        - Model: FTMO 100K Challenge
+        - Max daily loss: 5% | Max total drawdown: 10%
+        - Risk per trade: FIXED 0.5% (do NOT calculate lot size)
+        - No revenge trading, no overtrading
 
-        Technical context (lower timeframe):
-        - Bias: {market_data['bias']}
-        - EMA20: {market_data['ema20']:.2f}
-        - EMA50: {market_data['ema50']:.2f}
-        - RSI: {market_data['rsi']:.1f}
-        - ATR: {market_data['atr']:.4f}
+        MARKET DATA INPUT:
+        - Symbol: {symbol} | Current Price: {market_data['close']}
+        - Session: {current_session} | News Event: {market_data.get('news_event', 'No Data')}
+        - DXY Bias: {dxy_bias}
 
-        Market regime analysis:
-        - Identify if market is: TRENDING, PULLBACK, RANGE, or HIGH VOLATILITY
-        - Assess whether recent move suggests:
-        * healthy pullback
-        * potential reversal
-        * or dead-cat bounce after liquidation
+        TECHNICAL CONTEXT:
+        - HTF Bias (H1/H4): {market_data['htf_bias']}
+        - LTF Structure (M5/M15): {market_data['ltf_bias']}
+        - EMA20: {market_data['ema20']} | EMA50: {market_data['ema50']}
+        - RSI: {market_data['rsi']} | ATR: {market_data['atr']} ({market_data['atr_status']})
 
-        Risk & psychology filters:
-        - Avoid trades after strong impulsive moves
-        - Avoid counter-trend trades without confirmation
-        - Avoid tight stop loss in high ATR conditions
-        - Prefer confirmation over prediction
+        LIQUIDITY & STRUCTURE CONTEXT:
+        - Liquidity State: {liquidity_state} | FVG State: {fvg_state}
 
-        Decision rules:
-        - If conditions are unclear or risky, choose WAIT
-        - BUY or SELL only if risk-to-reward is clearly favorable (>= 1:2)
-        - Suggested SL must respect current volatility (ATR-based)
+        MANDATORY FILTERS (HARD RULES):
+        1. TREND setups require HTF and LTF bias alignment.
+        2. If HTF is Neutral/Range: 
+        - You MAY trade Liquidity Sweep or Mean Reversion setups on LTF.
+        - These setups are MAXIMUM quality "B".
+        3. If liquidity_state or fvg_state is 'Unknown' → WAIT (Absent / Resting is acceptable).
+        4. News filter: High Impact News → WAIT (HARD). No Data → proceed with caution.
+        5. Minimum Risk:Reward must be >= 1:2.
+        6. Stop Loss must be >= 1.5 × ATR.
 
-        Respond ONLY in valid JSON with:
-        {
+        EXECUTION LOGIC:
+        - BUY or SELL only if: Market Structure Shift (BOS/MSB) confirmed + Entry at premium/discount.
+        - Counter-trend allowed ONLY if: HTF is Neutral + Liquidity Sweep confirmed + RSI exhaustion/divergence.
+        - If Action is BUY or SELL: 'entry', 'sl', and 'tp' MUST be numeric values.
+
+        WAIT CLASSIFICATION:
+        - WAIT_SOFT: No valid setup yet.
+        - WAIT_RISK: FTMO risk constraints (news, volatility, drawdown protection).
+        - WAIT_DATA: Missing or unreliable market data.
+
+        OUTPUT FORMAT (STRICT JSON ONLY):
+        {{
         "action": "BUY" | "SELL" | "WAIT",
-        "confidence": "HIGH" | "MID" | "LOW",
-        "market_phase": "TREND" | "PULLBACK" | "RANGE" | "VOLATILE",
-        "entry": number or null,
-        "sl": number or null,
-        "tp": number or null,
-        "risk_note": "max 8 words",
-        "reason": "max 12 words"
-        }
+        "setup_quality": "A" | "B" | "C" | "None",
+        "market_regime": "TRENDING" | "REVERSAL" | "COMPRESSION" | "EXPANSION",
+        "setup_type": "Trend Continuation" | "Mean Reversion" | "Liquidity Sweep" | "None",
+        "execution": {{
+            "entry": number | null,
+            "sl": number | null,
+            "tp": number | null,
+            "risk_percent": 0.5
+        }},
+        "wait_type": "WAIT_SOFT" | "WAIT_RISK" | "WAIT_DATA" | "None",
+        "wait_reasons": ["Clear", "specific", "reasons"],
+        "risk_warning": "max 10 words",
+        "professional_rationale": "max 25 words"
+        }}
 
-        Be conservative. FTMO survival > profit.
+        Be professional and conservative. Explain WAIT reasons clearly.
         """
+
+        # System message đóng vai trò "Kỷ luật thép"
+        system_instruction = (
+            "You are a Senior Institutional Quant & FTMO Risk Manager. "
+            "You have zero tolerance for rule violations. Your goal is to pass the FTMO challenge "
+            "by filtering for ONLY high-probability institutional setups. "
+            "You must output STRICT JSON and nothing else."
+        )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a professional forex trader. Be conservative and precise."},
+                    {"role": "system", "content": system_instruction},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=100,
-                temperature=0.2,
+                max_tokens=300,
+                temperature=0.15,
                 response_format={"type": "json_object"}
             )
             
@@ -99,4 +133,4 @@ class AIAdviser:
             return result_json
             
         except Exception as e:
-            return {"advice": "ERROR", "reason": str(e)}
+            return {"action": "WAIT", "wait_type": "WAIT_DATA", "wait_reasons": [f"API Error: {str(e)}"]}

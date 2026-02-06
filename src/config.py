@@ -32,3 +32,7 @@ AI_MAX_TOKENS = 150
 
 # App Settings
 REFRESH_RATE = 2  # Seconds to poll prices
+
+# Telegram Settings
+TELE_ID = os.getenv("TELE_ID")
+TELE_TOKEN = os.getenv("TELE_TOKEN")
